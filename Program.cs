@@ -18,7 +18,7 @@ namespace glowberry.helper
         /// <summary>
         /// The version of the helper program.
         /// </summary>
-        public const string VERSION = "1.0.0";
+        public const string VERSION = "1.0.1";
 
         /// <summary>
         /// Main entry point for the application. Takes in the command line arguments

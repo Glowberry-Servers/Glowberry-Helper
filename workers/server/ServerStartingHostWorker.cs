@@ -154,8 +154,7 @@ namespace glowberry.helper.workers
         {
             try
             {
-                using StreamWriter writer = this.MinecraftServer.StandardInput;
-                await writer.WriteLineAsync(message);
+                await this.MinecraftServer.StandardInput.WriteLineAsync(message);;
                 Logging.Logger.Info("Sent message to server: <<" + message + ">>", LoggingType.File);
             }
             
