@@ -4,14 +4,19 @@ using System.IO;
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using glowberry.api.server;
 using glowberry.common;
 using glowberry.common.caches;
 using glowberry.common.factories;
 using glowberry.common.handlers;
+using glowberry.common.models;
 using glowberry.common.server.starters;
+using glowberry.utils;
+using LaminariaCore_General.utils;
 using LaminariaCore_Winforms.common;
+using Open.Nat;
 using static glowberry.common.Constants;
 
 namespace glowberry.helper.workers
@@ -41,6 +46,11 @@ namespace glowberry.helper.workers
         /// The server interactions API to use to interact with the server
         /// </summary>
         private ServerInteractions InteractionsAPI { get; }
+        
+        /// <summary>
+        /// The server section to use with the work
+        /// </summary>
+        private Section ServerSection { get; }
 
 
         /// <summary>
@@ -49,11 +59,67 @@ namespace glowberry.helper.workers
         /// <param name="serverName">The server name associated to this instance of the worker</param>
         public ServerStartingHostWorker(string serverName)
         {
-            Section serverSection = FileSystem.GetFirstSectionNamed("servers").GetFirstSectionNamed(serverName);
-            ServerEditor editor = GlobalEditorsCache.INSTANCE.GetOrCreate(serverSection);
-                
+            this.ServerSection = FileSystem.GetFirstSectionNamed("servers").GetFirstSectionNamed(serverName);
+            ServerEditor editor = GlobalEditorsCache.INSTANCE.GetOrCreate(this.ServerSection);
             this.InteractionsAPI = new ServerAPI().Interactions(editor.ServerSection.SimpleName);
             this.Editor = editor;
+        }
+        
+        /// <summary>
+        /// Checks if the current wifi network supports UPnP, and if so, creates a port mapping for the
+        /// specified ports.
+        /// If the port mapping already exists, the current one will be ignored.
+        /// </summary>
+        /// <param name="internalPort">The internal port to redirect incoming traffic to</param>
+        /// <param name="externalPort">The external port to use to redirect the traffic</param>
+        /// <returns>Either true or false, depending on whether the port mapping was successful or not</returns>
+        private static bool TryCreatePortMapping(int internalPort, int externalPort)
+        {
+            try
+            {
+                // Discover the router, on a 10 second timeout.
+                NatDiscoverer discoverer = new();
+                NatDevice device = discoverer.DiscoverDeviceAsync(PortMapper.Upnp, new CancellationTokenSource(10000))
+                    .Result;
+
+                // Create a new TCP port mapping in the router identified by the external port.
+                Logging.Logger.Info(@$"Creating a new TCP port mapping for I{internalPort}@E{externalPort}..."); 
+                device.CreatePortMapAsync(new Mapping(Protocol.Tcp, internalPort, externalPort,
+                        $"TCP-Glowberry@{internalPort}")).Wait();
+
+                return true;
+            }
+
+            // If the network does not support UPnP, ignore it.
+            catch (NatDeviceNotFoundException)
+            {
+                Logging.Logger.Warn(@"The current network does not support UPnP. Ignoring...");
+            }
+
+            // If the port mapping already exists, ignore it.
+            catch (AggregateException e) when (e.InnerException is MappingException)
+            {
+                Logging.Logger.Warn(@$"The I{internalPort}@E{externalPort} TCP port mapping already exists. Ignoring...");
+                return true;
+            }
+
+            // If any other exception occurs, log it and return false.
+            catch (Exception e)
+            {
+                Logging.Logger.Error(@$"An error occured while trying to create the port mapping.\n{e.StackTrace}");
+            }
+
+            return false;
+        }
+        
+        /// <summary>
+        /// Wraps the internal startup code in such a way that any exceptions are caught and logged.
+        /// </summary>
+        /// <param name="outputSystem"></param>
+        public void Start(MessageProcessingOutputHandler outputSystem)
+        {
+            try { this.InternalStart(outputSystem); }
+            catch (Exception e) { Logging.Logger.Error(e); }
         }
         
         /// <summary>
@@ -61,14 +127,28 @@ namespace glowberry.helper.workers
         /// until the process stops.
         /// </summary>
         /// <param name="outputSystem">The output system to use in order to log the messages</param>
-        public async void Start(MessageProcessingOutputHandler outputSystem)
+        private void InternalStart(MessageProcessingOutputHandler outputSystem)
         {
             // Gets the server starter to be used to run the server
             string serverType = this.Editor.GetServerInformation().Type;
-            AbstractServerStarter serverStarter =
-                new ServerTypeMappingsFactory().GetStarterFor(serverType, outputSystem);
+            AbstractServerStarter serverStarter = new ServerTypeMappingsFactory()
+                .GetStarterFor(serverType, outputSystem);
 
-            this.MinecraftServer = await serverStarter.Run(this.Editor); // Actually runs the server
+            /*
+             Tries to create the port mapping for the server, and updates the server_settings.xml
+             file with the correct ip based on the success of the operation.
+             This will inevitably fail if the router does not support UPnP.
+            */
+            ServerInformation info = this.Editor.GetServerInformation();
+
+            if (info.UPnPOn && TryCreatePortMapping(info.Port, info.Port))
+                info.IPAddress = NetworkUtils.GetExternalIPAddress();
+            
+            else info.IPAddress = NetworkUtils.GetLocalIPAddress();
+            
+            // Actually runs the minecraft server
+            this.MinecraftServer = serverStarter.Run(this.Editor);
+            Logging.Logger.Info($"Running {this.ServerSection.SimpleName} on {info.IPAddress}");
 
             // Starts up the pipe server to listen to messages from the client
             PipeSecurity pipeRules = new PipeSecurity();
@@ -81,7 +161,17 @@ namespace glowberry.helper.workers
             // Starts listening for a connection to the pipe server
             pipeServer.BeginWaitForConnection(HandleConnectionCallback, pipeServer);
             Logging.Logger.Info("Initialised pipe connection for server " + Editor.ServerSection.SimpleName, LoggingType.File);
-
+            info.CurrentServerProcessID = this.MinecraftServer.Id;
+            
+            // Updates the buffers so as to get everything ready for the flag
+            this.Editor.UpdateBuffers(info.ToDictionary());
+            this.Editor.FlushBuffers();
+            
+            // Creates and deletes a ".flag.started" that should be tracked by a SystemFileWatcher so that a program
+            // can know when the server was started
+            this.ServerSection.AddDocument(".flag.started");
+            this.ServerSection.RemoveDocument(".flag.started");
+            
             // Runs the server until the process it is contained in exits.
             this.MinecraftServer.WaitForExit();
             InteractionsAPI.ClearOutputBuffer();
