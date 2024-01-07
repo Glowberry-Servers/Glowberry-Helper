@@ -35,7 +35,10 @@
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="GlowberryDLL">
-          <HintPath>..\GlowberryDLL\bin\Debug\GlowberryDLL.dll</HintPath>
+          <HintPath>..\GlowberryDLL\bin\Release\GlowberryDLL.dll</HintPath>
+        </Reference>
+        <Reference Include="Open.Nat">
+          <HintPath>bin\Release\Open.Nat.dll</HintPath>
         </Reference>
         <Reference Include="System" />
         <Reference Include="System.Core" />
@@ -50,6 +53,7 @@
     </ItemGroup>
     <ItemGroup>
       <PackageReference Include="LaminariaCore-Winforms" Version="1.0.0" />
+      <PackageReference Include="Open.NAT" Version="2.1.0" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
