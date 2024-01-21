@@ -14,11 +14,6 @@ namespace glowberry.helper
     /// </summary>
     internal static class Program
     {
-        
-        /// <summary>
-        /// The version of the helper program.
-        /// </summary>
-        public const string VERSION = "1.0.1";
 
         /// <summary>
         /// Main entry point for the application. Takes in the command line arguments

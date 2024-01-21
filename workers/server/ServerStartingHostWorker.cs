@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.IO.Pipes;
 using System.Security.AccessControl;
@@ -13,9 +14,8 @@ using glowberry.common.factories;
 using glowberry.common.handlers;
 using glowberry.common.models;
 using glowberry.common.server.starters;
-using glowberry.utils;
+using LaminariaCore_General.common;
 using LaminariaCore_General.utils;
-using LaminariaCore_Winforms.common;
 using Open.Nat;
 using static glowberry.common.Constants;
 
@@ -79,7 +79,7 @@ namespace glowberry.helper.workers
             {
                 // Discover the router, on a 10 second timeout.
                 NatDiscoverer discoverer = new();
-                NatDevice device = discoverer.DiscoverDeviceAsync(PortMapper.Upnp, new CancellationTokenSource(10000))
+                NatDevice device = discoverer.DiscoverDeviceAsync(PortMapper.Upnp, new CancellationTokenSource(20000))
                     .Result;
 
                 // Create a new TCP port mapping in the router identified by the external port.
@@ -133,6 +133,14 @@ namespace glowberry.helper.workers
             string serverType = this.Editor.GetServerInformation().Type;
             AbstractServerStarter serverStarter = new ServerTypeMappingsFactory()
                 .GetStarterFor(serverType, outputSystem);
+            
+            // Gets an available port starting on the one specified, automatically update and flush the buffers.
+            if (this.Editor.HandlePortForServer() == 1)
+            {
+                string errorMessage = Logging.Logger.Error("Could not find a port to start the server with. Please change the port in the server properties or free up ports to use.");
+                outputSystem.Write(errorMessage, Color.Firebrick);
+                return;
+            }
 
             /*
              Tries to create the port mapping for the server, and updates the server_settings.xml
