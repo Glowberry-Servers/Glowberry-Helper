@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.IO.Pipes;
 using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -119,6 +120,14 @@ namespace glowberry.helper.workers
         public void Start(MessageProcessingOutputHandler outputSystem)
         {
             try { this.InternalStart(outputSystem); }
+            
+            // If the pipes crash, exit the program after logging
+            catch (IdentityNotMappedException e)
+            {
+                Logging.Logger.Error(e);
+                Environment.Exit(1);
+            }
+            
             catch (Exception e) { Logging.Logger.Error(e); }
         }
         
@@ -160,8 +169,10 @@ namespace glowberry.helper.workers
 
             // Starts up the pipe server to listen to messages from the client
             PipeSecurity pipeRules = new PipeSecurity();
-            pipeRules.AddAccessRule(new PipeAccessRule("Everyone", PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
+            SecurityIdentifier id = new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null);
+            
             pipeRules.AddAccessRule(new PipeAccessRule("SYSTEM", PipeAccessRights.FullControl, AccessControlType.Allow));
+            pipeRules.AddAccessRule(new PipeAccessRule(id, PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
             
             using NamedPipeServerStream pipeServer = new("piped" + this.Editor.ServerSection.SimpleName, PipeDirection.In,
                 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough | PipeOptions.Asynchronous, 1024, 1024, pipeRules);
