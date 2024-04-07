@@ -80,7 +80,7 @@ namespace glowberry.helper.workers
             {
                 // Discover the router, on a 10 second timeout.
                 NatDiscoverer discoverer = new();
-                NatDevice device = discoverer.DiscoverDeviceAsync(PortMapper.Upnp, new CancellationTokenSource(20000))
+                NatDevice device = discoverer.DiscoverDeviceAsync(PortMapper.Upnp, new CancellationTokenSource(5000))
                     .Result;
 
                 // Create a new TCP port mapping in the router identified by the external port.
@@ -94,7 +94,7 @@ namespace glowberry.helper.workers
             // If the network does not support UPnP, ignore it.
             catch (NatDeviceNotFoundException)
             {
-                Logging.Logger.Warn(@"The current network does not support UPnP. Ignoring...");
+                Logging.Logger.Warn(@"The current network does not support UPnP or the router wasn't found. Ignoring...");
             }
 
             // If the port mapping already exists, ignore it.
@@ -108,6 +108,50 @@ namespace glowberry.helper.workers
             catch (Exception e)
             {
                 Logging.Logger.Error(@$"An error occured while trying to create the port mapping.\n{e.StackTrace}");
+            }
+
+            return false;
+        }
+        
+        /// <summary>
+        /// Tries to remove the port mapping for the specified ports.
+        /// </summary>
+        /// <param name="internalPort">The internal port to redirect incoming traffic to</param>
+        /// <param name="externalPort">The external port to use to redirect the traffic</param>
+        /// <returns>Either true or false, depending on whether the removal of the port mapping was successful or not</returns>
+        private static bool TryRemovePortMapping(int internalPort, int externalPort)
+        {
+            try
+            {
+                // Discover the router, on a 10 second timeout.
+                NatDiscoverer discoverer = new();
+                NatDevice device = discoverer.DiscoverDeviceAsync(PortMapper.Upnp, new CancellationTokenSource(5000))
+                    .Result;
+
+                // Create a new TCP port mapping in the router identified by the external port.
+                device.DeletePortMapAsync(new Mapping(Protocol.Tcp, internalPort, externalPort)).Wait();
+                Logging.Logger.Info(@$"Removed the TCP port mapping for I{internalPort}@E{externalPort}..."); 
+
+                return true;
+            }
+
+            // If the network does not support UPnP, ignore it.
+            catch (NatDeviceNotFoundException)
+            {
+                Logging.Logger.Warn(@"The current network does not support UPnP or the router wasn't found. Ignoring...");
+            }
+
+            // If the port mapping already exists, ignore it.
+            catch (AggregateException e) when (e.InnerException is MappingException)
+            {
+                Logging.Logger.Warn(@$"The I{internalPort}@E{externalPort} TCP port mapping does not exist. Ignoring...");
+                return true;
+            }
+
+            // If any other exception occurs, log it and return false.
+            catch (Exception e)
+            {
+                Logging.Logger.Error(@$"An error occured while trying to remove the port mapping.\n{e.StackTrace}");
             }
 
             return false;
@@ -158,10 +202,14 @@ namespace glowberry.helper.workers
             */
             ServerInformation info = this.Editor.GetServerInformation();
 
+            // If the user has UPnP on, try to create the port mapping
             if (info.UPnPOn && TryCreatePortMapping(info.Port, info.Port))
                 info.IPAddress = NetworkUtils.GetExternalIPAddress();
-            
+             
             else info.IPAddress = NetworkUtils.GetLocalIPAddress();
+            
+            // If the user does not have upnp on, remove the port mapping
+            if (!info.UPnPOn) Task.Run( () => TryRemovePortMapping(info.Port, info.Port));
             
             // Actually runs the minecraft server
             this.MinecraftServer = serverStarter.Run(this.Editor);
