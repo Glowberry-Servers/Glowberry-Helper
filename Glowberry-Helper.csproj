@@ -35,7 +35,7 @@
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="GlowberryDLL">
-          <HintPath>..\GlowberryDLL\bin\Release\GlowberryDLL.dll</HintPath>
+            <HintPath>..\GlowberryDLL\bin\Debug\GlowberryDLL.dll</HintPath>
         </Reference>
         <Reference Include="Open.Nat">
           <HintPath>bin\Release\Open.Nat.dll</HintPath>
@@ -49,6 +49,7 @@
     <ItemGroup>
         <Compile Include="Program.cs" />
         <Compile Include="Properties\AssemblyInfo.cs" />
+        <Compile Include="workers\server\FirewallHandler.cs" />
         <Compile Include="workers\server\ServerStartingHostWorker.cs" />
         <Compile Include="workers\WorkerProcessor.cs" />
     </ItemGroup>

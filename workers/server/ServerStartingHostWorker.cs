@@ -18,9 +18,9 @@ using glowberry.common.server.starters;
 using LaminariaCore_General.common;
 using LaminariaCore_General.utils;
 using Open.Nat;
-using static glowberry.common.Constants;
+using static glowberry.common.configuration.Constants;
 
-namespace glowberry.helper.workers
+namespace glowberry.helper.workers.server
 {
     /// <summary>
     /// This class is responsible for providing a NamedPipe server that allows processes to communicate directly
@@ -194,6 +194,9 @@ namespace glowberry.helper.workers
                 outputSystem.Write(errorMessage, Color.Firebrick);
                 return;
             }
+            
+            // If the server has the Handle Firewall mode enabled, automatically handle the firewall configs
+            FirewallHandler.AutoHandleFirewall(this.Editor);
 
             /*
              Tries to create the port mapping for the server, and updates the server_settings.xml
